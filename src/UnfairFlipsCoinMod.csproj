@@ -1,0 +1,121 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Build:   dotnet build src -c Release -p:GameDir="C:\...\steamapps\common\Unfair Flips"
+    Output:  release/UnfairFlipsCoinMod-<version>.zip               (plugin only)
+             release/UnfairFlipsCoinMod-<version>-with-BepInEx.zip  (all-in-one)
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>UnfairFlipsCoinMod</AssemblyName>
+    <RootNamespace>UnfairFlipsCoinMod</RootNamespace>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <DebugType>none</DebugType>
+    <Deterministic>true</Deterministic>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!-- Single source of truth for the version (also used for the BepInPlugin attribute). -->
+    <Version>1.1.0</Version>
+    <PluginGuid>luka3006.unfairflips.coinmod</PluginGuid>
+    <PluginName>Unfair Flips Coin Mod</PluginName>
+    <Product>$(PluginName)</Product>
+    <Description>BepInEx plugin for Unfair Flips: adjust heads chance and flip speed.</Description>
+    <Copyright>Copyright (c) 2026 Luka3006. MIT License.</Copyright>
+
+    <!-- Game install folder (contains "Unfair Flips.exe"). -->
+    <GameDir Condition="'$(GameDir)' == ''">$(UNFAIR_FLIPS_DIR)</GameDir>
+    <GameManaged>$([MSBuild]::EnsureTrailingSlash('$(GameDir)'))Unfair Flips_Data\Managed</GameManaged>
+
+    <!-- Pinned BepInEx release, verified by SHA-256. -->
+    <BepInExVersion>5.4.23.4</BepInExVersion>
+    <BepInExZip>BepInEx_win_x64_$(BepInExVersion).zip</BepInExZip>
+    <BepInExUrl>https://github.com/BepInEx/BepInEx/releases/download/v$(BepInExVersion)/$(BepInExZip)</BepInExUrl>
+    <BepInExSha256>f881201b79da03e513bf97cdf39607ffa7f9e0d31a519b1aeeca8eb60f8309e7</BepInExSha256>
+
+    <RepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..'))\</RepoRoot>
+    <CacheDir>$(RepoRoot).cache\</CacheDir>
+    <BepInExDir>$(CacheDir)BepInEx_$(BepInExVersion)\</BepInExDir>
+    <ReleaseDir>$(RepoRoot)release\</ReleaseDir>
+    <StageDir>$(CacheDir)stage\</StageDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="BepInEx"><HintPath>$(BepInExDir)BepInEx\core\BepInEx.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Assembly-CSharp"><HintPath>$(GameManaged)\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>$(GameManaged)\UnityEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(GameManaged)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.IMGUIModule"><HintPath>$(GameManaged)\UnityEngine.IMGUIModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.InputLegacyModule"><HintPath>$(GameManaged)\UnityEngine.InputLegacyModule.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+  <!-- Fail early with a readable message instead of dozens of missing-type errors. -->
+  <Target Name="CheckGameDir" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(GameManaged)\Assembly-CSharp.dll')"
+           Text="Game files not found. Pass the game folder: dotnet build src -c Release -p:GameDir=&quot;...\steamapps\common\Unfair Flips&quot; (or set UNFAIR_FLIPS_DIR). Looked in: $(GameManaged)" />
+  </Target>
+
+  <!-- Download BepInEx once (needed to compile against and for the all-in-one package). -->
+  <Target Name="FetchBepInEx" BeforeTargets="ResolveAssemblyReferences" Condition="!Exists('$(BepInExDir)BepInEx\core\BepInEx.dll')">
+    <DownloadFile SourceUrl="$(BepInExUrl)" DestinationFolder="$(CacheDir)" DestinationFileName="$(BepInExZip)" />
+    <VerifyFileHash File="$(CacheDir)$(BepInExZip)" Algorithm="SHA256" Hash="$(BepInExSha256)" />
+    <Unzip SourceFiles="$(CacheDir)$(BepInExZip)" DestinationFolder="$(BepInExDir)" />
+  </Target>
+
+  <!-- Generate PluginInfo constants from the project properties. -->
+  <Target Name="GeneratePluginInfo" BeforeTargets="CoreCompile">
+    <PropertyGroup>
+      <PluginInfoFile>$(IntermediateOutputPath)PluginInfo.g.cs</PluginInfoFile>
+    </PropertyGroup>
+    <ItemGroup>
+      <PluginInfoLine Include="// &lt;auto-generated /&gt;" />
+      <PluginInfoLine Include="namespace UnfairFlipsCoinMod" />
+      <PluginInfoLine Include="{" />
+      <PluginInfoLine Include="    internal static class PluginInfo" />
+      <PluginInfoLine Include="    {" />
+      <PluginInfoLine Include="        public const string Guid = &quot;$(PluginGuid)&quot;%3B" />
+      <PluginInfoLine Include="        public const string Name = &quot;$(PluginName)&quot;%3B" />
+      <PluginInfoLine Include="        public const string Version = &quot;$(Version)&quot;%3B" />
+      <PluginInfoLine Include="    }" />
+      <PluginInfoLine Include="}" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(PluginInfoFile)" Lines="@(PluginInfoLine)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <Compile Include="$(PluginInfoFile)" />
+      <FileWrites Include="$(PluginInfoFile)" />
+    </ItemGroup>
+  </Target>
+
+  <!-- Release builds: create the two distributable zips. -->
+  <Target Name="PackageRelease" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <PropertyGroup>
+      <PluginStage>$(StageDir)plugin\</PluginStage>
+      <BundleStage>$(StageDir)bundle\</BundleStage>
+      <PluginFolder>BepInEx\plugins\UnfairFlipsCoinMod\</PluginFolder>
+    </PropertyGroup>
+    <ItemGroup>
+      <PluginFile Include="$(TargetPath)" />
+      <PluginFile Include="$(RepoRoot)README.md;$(RepoRoot)CHANGELOG.md;$(RepoRoot)LICENSE" />
+      <BepInExFile Include="$(BepInExDir)**\*" />
+    </ItemGroup>
+
+    <RemoveDir Directories="$(StageDir)" />
+    <Copy SourceFiles="@(PluginFile)" DestinationFolder="$(PluginStage)$(PluginFolder)" />
+    <Copy SourceFiles="@(BepInExFile)" DestinationFiles="@(BepInExFile->'$(BundleStage)%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Copy SourceFiles="$(RepoRoot)third_party\BepInEx_LICENSE.txt" DestinationFolder="$(BundleStage)" />
+    <Copy SourceFiles="@(PluginFile)" DestinationFolder="$(BundleStage)$(PluginFolder)" />
+
+    <MakeDir Directories="$(ReleaseDir)" />
+    <ZipDirectory SourceDirectory="$(PluginStage)" DestinationFile="$(ReleaseDir)UnfairFlipsCoinMod-$(Version).zip" Overwrite="true" />
+    <ZipDirectory SourceDirectory="$(BundleStage)" DestinationFile="$(ReleaseDir)UnfairFlipsCoinMod-$(Version)-with-BepInEx.zip" Overwrite="true" />
+    <Message Importance="high" Text="Release packages written to $(ReleaseDir)" />
+  </Target>
+
+</Project>
